@@ -1,0 +1,132 @@
+---
+title: "Machine Learning"
+author: "JAM"
+date: "19 October 2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Context and Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+# Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+
+# module load and set of seed
+
+please use following seed to reproduce the results: 3434
+
+```{r  }
+library(ggplot2)
+library(caret)
+library(randomForest)
+library(e1071)
+library(gbm)
+library(doParallel)
+library(survival)
+library(splines)
+library(plyr)
+set.seed(3434)
+
+```
+
+
+
+# Getting data
+
+we get  training and testing data set and load them into memory 
+```{r echo=TRUE}
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""), row.names = 1)
+testing <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""), row.names = 1)
+```
+
+cleaning data
+Remove "#DIV/0!", replace with an NA value
+
+```{r }
+training <- training[, 6:dim(training)[2]]
+
+treshold <- dim(training)[1] * 0.95
+
+#Remove columns with more than 95% of NA or "" values
+gColumns <- !apply(training, 2, function(x) sum(is.na(x)) > treshold  || sum(x=="") > treshold)
+
+training <- training[, gColumns]
+
+bColumns <- nearZeroVar(training, saveMetrics = TRUE)
+
+training <- training[, bColumns$nzv==FALSE]
+
+training$classe = factor(training$classe)
+
+```
+
+
+
+Partioning data (training,testing)
+and prepare to test with some chunk
+```{r }
+toTrain <- createDataPartition(training$classe, p = 0.6)[[1]]
+crossv <- training[-toTrain,]  
+training <- training[ toTrain,] #60%
+
+toTrain <- createDataPartition(crossv$classe, p = 0.75)[[1]]
+crossv_test <- crossv[ -toTrain,]
+crossv <- crossv[toTrain,]
+
+
+testing <- testing[, 6:dim(testing)[2]]
+testing <- testing[, gColumns]
+testing$classe <- NA
+testing <- testing[, bColumns$nzv==FALSE]
+```
+
+Let's use Random forest prediction to see how accurancy we have
+
+```{r echo=FALSE}
+model1 <- train(classe ~ ., data=training, method="rf")
+predict1 <- predict(model1, crossv)
+confusionMatrix(predict1, crossv$classe)
+
+predict1 <- predict(model1, crossv_test)
+accuracy <- sum(predict1 == crossv_test$classe) / length(predict)
+```
+
+Let's calculate the answer for testing data set
+
+```{r echo=FALSE}
+pml_write_files = function(x){
+n = length(x)
+for(i in 1:n){
+filename = paste0("ml_result_",i,".txt")
+write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+}
+}
+x <- testing
+answers <- predict(model1, newdata=x)
+print(answers)
+pml_write_files(answers)
+```
+
+
